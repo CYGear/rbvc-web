@@ -6,7 +6,7 @@
   <title>RBVC — Web Voice</title>
   <link rel="stylesheet" href="style.css"/>
 
-  <!-- Firebase v8 (works on static hosting like GitHub Pages) -->
+  <!-- Firebase v8 for static hosting -->
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
 </head>
@@ -21,7 +21,13 @@
 
   <div id="bubbles"></div>
 
-  <!-- Load after DOM so inputs are interactive -->
+  <!-- Debug overlay -->
+  <div id="debug">
+    <div class="hdr">Debug Log</div>
+    <pre id="log"></pre>
+  </div>
+
+  <!-- defer so DOM is ready -->
   <script src="script.js" defer></script>
 </body>
 </html>
