@@ -15,7 +15,7 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
 /***************
- * DOM
+ * DOM handles
  ***************/
 const overlay   = document.getElementById("overlay");
 const connectBtn= document.getElementById("connectBtn");
@@ -23,178 +23,136 @@ const bubbleArea= document.getElementById("bubbleArea");
 const micStatus = document.getElementById("micStatus");
 
 /***************
- * State
+ * Global state
  ***************/
 let myId = null;
 let myServer = null;
 let myStream = null;
-let myPos = {x:0,y:0,z:0};
-let audioCtx, myAnalyser, myAnalyserData;
+let myAnalyser, myAnalyserData;
+let audioCtx;
+let positionsCache = {}; // playerInfo merged data
+let peers = new Map();
 
-const peers = new Map(); // peerId -> {pc, audio, stream, gain, analyser, analyserData, bubble}
-let usersCache = {};     // playerId -> {name, avatar}
-let positionsCache = {}; // playerId -> {x,y,z}
+const rtcConfig = { iceServers: [{urls:"stun:stun.l.google.com:19302"}] };
+
+function path(...parts){ return parts.join("/"); }
 
 /***************
- * Helpers
+ * Bubble creator
  ***************/
-const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
-
-function createBubble(playerId, name, avatar, isMe=false){
-  let el = document.getElementById("bubble_"+playerId);
+function createBubble(id, name, avatar, isMe=false){
+  let el = document.getElementById("bubble_"+id);
   if(!el){
     el = document.createElement("div");
     el.className = "bubble"+(isMe?" me":"");
-    el.id = "bubble_"+playerId;
-    el.innerHTML = `<img src="${avatar||''}" alt=""><span>${name||playerId}</span>`;
+    el.id = "bubble_"+id;
+    el.innerHTML = `<img src="${avatar||''}" alt=""><span>${name||id}</span>`;
     bubbleArea.appendChild(el);
-  }else{
-    el.querySelector("img").src = avatar || "";
-    el.querySelector("span").textContent = name || playerId;
+  } else {
+    el.querySelector("img").src = avatar||"";
+    el.querySelector("span").textContent = name||id;
   }
   return el;
 }
 
-function distance(a,b){
-  if(!a||!b) return 99999;
+/***************
+ * Helper: distance volume
+ ***************/
+function dist(a,b){
+  if(!a||!b) return 999;
   const dx=a.x-b.x, dy=a.y-b.y, dz=a.z-b.z;
   return Math.sqrt(dx*dx+dy*dy+dz*dz);
 }
-
-function volumeForDistance(d){
-  // 0..100 studs → 1..0 volume (clamped)
-  const v = Math.max(0, 1 - (d/100));
-  return v;
-}
+function volumeForDist(d){ return Math.max(0, 1 - d/100); }
 
 /***************
- * WebRTC using Firebase as signaling
+ * WebRTC core
  ***************/
-const rtcConfig = {
-  iceServers: [{urls:"stun:stun.l.google.com:19302"}]
-};
-
-function firebasePath(...parts){
-  return parts.join("/");
-}
-
 async function ensurePeer(peerId){
   if(peers.has(peerId)) return peers.get(peerId);
 
   const pc = new RTCPeerConnection(rtcConfig);
-  myStream.getTracks().forEach(t => pc.addTrack(t, myStream));
+  myStream.getTracks().forEach(t=>pc.addTrack(t,myStream));
 
-  // Per-peer audio path: create Gain node (for distance volume)
-  if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+  const gainNode = audioCtx.createGain();
+  gainNode.gain.value = 0;
 
-  const destStream = new MediaStream();
   const audioEl = new Audio();
   audioEl.autoplay = true; audioEl.playsInline = true;
 
-  // audio graph: element <- destination <- gain <- source(stream)
-  const gain = audioCtx.createGain();
-  gain.gain.value = 0; // start muted until we compute distance
-
   let analyser=null, analyserData=null;
 
-  pc.ontrack = (ev)=>{
+  pc.ontrack = ev=>{
     const remoteStream = ev.streams[0];
-    // route through WebAudio so we can set volume by distance
     const src = audioCtx.createMediaStreamSource(remoteStream);
-    src.connect(gain);
-    gain.connect(audioCtx.destination);
-
-    // analyser for bubble pulse
     analyser = audioCtx.createAnalyser();
     analyser.fftSize = 512;
     analyserData = new Uint8Array(analyser.frequencyBinCount);
     src.connect(analyser);
-
-    // we still attach to <audio> to keep autoplay policies happy on some browsers
+    src.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
     audioEl.srcObject = remoteStream;
   };
 
-  pc.onicecandidate = async (ev)=>{
+  pc.onicecandidate = ev=>{
     if(ev.candidate){
-      const ref = db.ref(firebasePath("vc", myServer, "ice", peerId, myId)).push();
-      ref.set(ev.candidate.toJSON());
+      db.ref(path("vc", myServer, "ice", peerId, myId)).push(ev.candidate.toJSON());
     }
   };
 
-  // Listen for remote ICE from peer
-  db.ref(firebasePath("vc", myServer, "ice", myId, peerId))
-    .on("child_added", async snap=>{
-      const cand = snap.val();
-      if(cand) {
-        try{ await pc.addIceCandidate(new RTCIceCandidate(cand)); }catch{}
-      }
+  db.ref(path("vc", myServer, "ice", myId, peerId))
+    .on("child_added", s=>{
+      const c=s.val();
+      if(c) pc.addIceCandidate(new RTCIceCandidate(c)).catch(()=>{});
     });
 
-  const bubble = createBubble(
-    peerId,
-    usersCache[peerId]?.name || peerId,
-    usersCache[peerId]?.avatar || "",
-    false
-  );
-
-  const rec = {pc, audio:audioEl, gain, analyser, analyserData, bubble};
-  peers.set(peerId, rec);
+  const bubble=createBubble(peerId,"Loading...","",false);
+  const rec={pc,gain:gainNode,analyser,analyserData,bubble};
+  peers.set(peerId,rec);
   return rec;
 }
 
 async function callPeer(peerId){
-  const rec = await ensurePeer(peerId);
-  const {pc} = rec;
-
-  const offer = await pc.createOffer({offerToReceiveAudio:true});
+  const rec=await ensurePeer(peerId);
+  const {pc}=rec;
+  const offer=await pc.createOffer({offerToReceiveAudio:true});
   await pc.setLocalDescription(offer);
-
-  // write offer to peer
-  await db.ref(firebasePath("vc", myServer, "offers", peerId, myId)).set(offer);
-
-  // wait for answer
-  db.ref(firebasePath("vc", myServer, "answers", myId, peerId))
-    .on("value", async snap=>{
-      const ans = snap.val();
-      if(ans && (!pc.currentRemoteDescription)){
-        try { await pc.setRemoteDescription(new RTCSessionDescription(ans)); }
-        catch(e){}
-      }
-    });
+  await db.ref(path("vc",myServer,"offers",peerId,myId)).set(offer);
+  db.ref(path("vc",myServer,"answers",myId,peerId)).on("value",async snap=>{
+    const ans=snap.val();
+    if(ans && !pc.currentRemoteDescription){
+      await pc.setRemoteDescription(new RTCSessionDescription(ans));
+    }
+  });
 }
 
-async function answerPeer(fromId, offer){
-  const rec = await ensurePeer(fromId);
-  const {pc} = rec;
-
+async function answerPeer(peerId,offer){
+  const rec=await ensurePeer(peerId);
+  const {pc}=rec;
   await pc.setRemoteDescription(new RTCSessionDescription(offer));
-  const answer = await pc.createAnswer();
+  const answer=await pc.createAnswer();
   await pc.setLocalDescription(answer);
-
-  await db.ref(firebasePath("vc", myServer, "answers", fromId, myId)).set(answer);
+  await db.ref(path("vc",myServer,"answers",peerId,myId)).set(answer);
 }
 
 /***************
- * Live UI + volume loops
+ * UI + animation
  ***************/
-function startBubbleAnimation(){
-  // animate my bubble with mic loudness
-  const loop = ()=>{
-    // my mic level
+function startAnimation(){
+  const loop=()=>{
     if(myAnalyser){
       myAnalyser.getByteFrequencyData(myAnalyserData);
-      const avg = myAnalyserData.reduce((a,b)=>a+b,0) / myAnalyserData.length;
-      const scale = 1 + Math.min(avg/120, 0.7);
-      const me = document.getElementById("bubble_"+myId);
-      if(me) me.style.transform = `scale(${scale})`;
+      const avg=myAnalyserData.reduce((a,b)=>a+b,0)/myAnalyserData.length;
+      const scale=1+Math.min(avg/120,0.7);
+      const el=document.getElementById("bubble_"+myId);
+      if(el) el.style.transform=`scale(${scale})`;
     }
-    // peers pulse based on their analyser
     peers.forEach(rec=>{
       if(rec.analyser && rec.bubble){
         rec.analyser.getByteFrequencyData(rec.analyserData);
-        const avg = rec.analyserData.reduce((a,b)=>a+b,0)/rec.analyserData.length;
-        const scale = 1 + Math.min(avg/120, 0.6);
-        rec.bubble.style.transform = `scale(${scale})`;
+        const avg=rec.analyserData.reduce((a,b)=>a+b,0)/rec.analyserData.length;
+        const scale=1+Math.min(avg/130,0.6);
+        rec.bubble.style.transform=`scale(${scale})`;
       }
     });
     requestAnimationFrame(loop);
@@ -202,117 +160,83 @@ function startBubbleAnimation(){
   requestAnimationFrame(loop);
 }
 
-function startDistanceVolumeLoop(){
+function startDistanceLoop(){
   setInterval(()=>{
-    const myP = positionsCache[myId] || myPos;
-    peers.forEach((rec, pid)=>{
-      const theirP = positionsCache[pid];
-      const d = distance(myP, theirP);
-      const vol = volumeForDistance(d); // 0..1
-      if(rec.gain) rec.gain.gain.value = vol;
+    const me=positionsCache[myId];
+    peers.forEach((rec,id)=>{
+      const p=positionsCache[id];
+      const d=dist(me,p);
+      const vol=volumeForDist(d);
+      if(rec.gain) rec.gain.gain.value=vol;
     });
-  }, 120);
+  },150);
 }
 
 /***************
- * Join flow
+ * Connect flow
  ***************/
 connectBtn.onclick = async ()=>{
-  myServer = document.getElementById("serverId").value.trim();
-  myId     = document.getElementById("playerId").value.trim();
+  myServer=document.getElementById("serverId").value.trim();
+  myId=document.getElementById("playerId").value.trim();
+  if(myServer.length!==4 || myId.length<5){alert("Enter valid IDs");return;}
 
-  if(myServer.length!==4 || myId.length<5){
-    alert("Enter valid Server/Player IDs.");
-    return;
-  }
+  overlay.style.display="none";
 
-  overlay.style.display = "none";
-
-  // Mic
+  // mic
   try{
-    myStream = await navigator.mediaDevices.getUserMedia({audio:true});
-    micStatus.textContent = "🎤 Mic: Connected";
-  }catch{
-    micStatus.textContent = "❌ Mic blocked";
-    return;
-  }
+    myStream=await navigator.mediaDevices.getUserMedia({audio:true});
+    micStatus.textContent="🎤 Mic Connected";
+  }catch{micStatus.textContent="❌ Mic blocked";return;}
 
-  // My analyser for bubble pulse
-  audioCtx = new (window.AudioContext||window.webkitAudioContext)();
-  const src = audioCtx.createMediaStreamSource(myStream);
-  myAnalyser = audioCtx.createAnalyser();
-  myAnalyser.fftSize = 512;
+  audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+  const src=audioCtx.createMediaStreamSource(myStream);
+  myAnalyser=audioCtx.createAnalyser();
+  myAnalyser.fftSize=512;
+  myAnalyserData=new Uint8Array(myAnalyser.frequencyBinCount);
   src.connect(myAnalyser);
-  myAnalyserData = new Uint8Array(myAnalyser.frequencyBinCount);
 
-  // Render ME bubble immediately using users entry (will update when usersCache loads)
-  createBubble(myId, "You", "", true);
+  createBubble(myId,"You","",true);
 
-  // Presence + cleanup
-  const presRef = db.ref(firebasePath("vc", myServer, "presence", myId));
+  const presRef=db.ref(path("vc",myServer,"presence",myId));
   presRef.set(firebase.database.ServerValue.TIMESTAMP);
   presRef.onDisconnect().remove();
 
-  // Listen for users info (names/avatars) to render bubbles
-  db.ref(firebasePath("users", myServer)).on("value", snap=>{
-    usersCache = snap.val() || {};
-    // refresh bubbles for anyone we already know
-    Object.keys(usersCache).forEach(pid=>{
-      const u = usersCache[pid];
-      createBubble(pid, u.name||pid, u.avatar||"", pid===myId);
+  // listen to combined playerInfo
+  db.ref(path("playerInfo",myServer)).on("value",snap=>{
+    const data=snap.val()||{};
+    positionsCache=data;
+    Object.keys(data).forEach(pid=>{
+      const p=data[pid];
+      createBubble(pid,p.name||pid,p.avatar||"",pid===myId);
     });
   });
 
-  // Listen for positions to compute distance volume
-  db.ref(firebasePath("positions", myServer)).on("value", snap=>{
-    positionsCache = snap.val() || {};
-    // keep my own cached pos if present
-    if(positionsCache[myId]) myPos = positionsCache[myId];
+  // presence → detect peers and start WebRTC
+  db.ref(path("vc",myServer,"presence")).on("value",snap=>{
+    const all=snap.val()||{};
+    const ids=Object.keys(all).filter(i=>i!==myId);
+    ids.forEach(pid=>{
+      if(myId<pid) callPeer(pid);
+      else db.ref(path("vc",myServer,"offers",myId,pid))
+        .on("value",s=>{
+          const offer=s.val();
+          if(offer) answerPeer(pid,offer);
+        });
+    });
   });
 
-  // Discover peers via presence; use lexicographic rule to avoid double dialing:
-  // the "smaller" id places the call.
-  db.ref(firebasePath("vc", myServer, "presence"))
-    .on("value", async snap=>{
-      const present = snap.val() || {};
-      const ids = Object.keys(present).filter(id=>id!==myId);
-
-      // create bubbles for new folks
-      ids.forEach(pid=>{
-        const u = usersCache[pid] || {};
-        createBubble(pid, u.name||pid, u.avatar||"");
-      });
-
-      for(const pid of ids){
-        if(myId < pid){ // I initiate
-          await callPeer(pid);
-        }else{
-          // I wait for an offer
-          db.ref(firebasePath("vc", myServer, "offers", myId, pid))
-            .on("value", async offerSnap=>{
-              const offer = offerSnap.val();
-              if(offer){
-                await answerPeer(pid, offer);
-              }
-            });
-        }
-      }
-    });
-
-  // Start visual loops
-  startBubbleAnimation();
-  startDistanceVolumeLoop();
+  startAnimation();
+  startDistanceLoop();
 };
 
 /***************
- * Cleanup on close
+ * cleanup
  ***************/
-window.addEventListener("beforeunload", ()=>{
-  if(myServer && myId){
-    db.ref(firebasePath("vc", myServer, "presence", myId)).remove();
-    db.ref(firebasePath("vc", myServer, "offers", myId)).remove();
-    db.ref(firebasePath("vc", myServer, "answers", myId)).remove();
-    db.ref(firebasePath("vc", myServer, "ice", myId)).remove();
+window.addEventListener("beforeunload",()=>{
+  if(myServer&&myId){
+    db.ref(path("vc",myServer,"presence",myId)).remove();
+    db.ref(path("vc",myServer,"offers",myId)).remove();
+    db.ref(path("vc",myServer,"answers",myId)).remove();
+    db.ref(path("vc",myServer,"ice",myId)).remove();
   }
 });
-
