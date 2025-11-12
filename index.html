@@ -1,24 +1,26 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>RBVC</title>
-  <link rel="stylesheet" href="style.css" />
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>RBVC — Web Voice</title>
+  <link rel="stylesheet" href="style.css"/>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
 </head>
 <body>
-  <div id="container">
-    <div class="card" id="joinCard">
-      <h1>🎧 RBVC</h1>
-      <input id="server" placeholder="Server ID" />
-      <input id="pid" placeholder="Player ID" />
-      <button id="connectBtn">Connect</button>
-      <p id="status">⏳ Waiting...</p>
-    </div>
-    <div id="bubbles"></div>
+  <div id="joinCard" class="card">
+    <h1>🎧 RBVC</h1>
+    <input id="server" placeholder="4-digit Server Code (e.g. 1234)" maxlength="4"/>
+    <input id="pid" placeholder="Your ID (any string)"/>
+    <input id="displayName" placeholder="Display name (optional)"/>
+    <input id="avatarUrl" placeholder="Avatar URL (optional)"/>
+    <button id="connectBtn">Connect</button>
+    <p id="status">⏳ Waiting…</p>
   </div>
+
+  <div id="bubbles"></div>
+
   <script src="script.js"></script>
 </body>
 </html>
