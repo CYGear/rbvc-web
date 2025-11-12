@@ -20,6 +20,8 @@ const bubbleArea = document.getElementById("bubbles");
 
 let myServer = null;
 let myId = null;
+let micStream = null;
+let audioCtx, analyser, dataArray;
 
 connectBtn.onclick = async () => {
   myServer = serverInput.value.trim();
@@ -30,30 +32,33 @@ connectBtn.onclick = async () => {
   initVoice();
 };
 
-// Firebase helper
+// Helper
 const path = (...args) => args.join("/");
 
-// 🔊 Setup voice + bubble
+// 🎤 Mic setup
 async function initVoice() {
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     status.textContent = "🎤 Mic Connected";
 
-    // Create audio analyser
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const analyser = audioCtx.createAnalyser();
-    const src = audioCtx.createMediaStreamSource(stream);
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioCtx.createAnalyser();
+    const src = audioCtx.createMediaStreamSource(micStream);
     src.connect(analyser);
     analyser.fftSize = 256;
-    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    dataArray = new Uint8Array(analyser.frequencyBinCount);
 
-    // Push mic activity to Firebase
+    // Send speaking status to Firebase
     setInterval(() => {
       analyser.getByteFrequencyData(dataArray);
       const avg = dataArray.reduce((a,b)=>a+b,0)/dataArray.length;
-      const speaking = avg > 40; // threshold
-      db.ref(path("playerInfo", myServer, myId)).update({ speaking });
-    }, 200);
+      const speaking = avg > 40;
+
+      db.ref(path("playerInfo", myServer, myId)).update({
+        speaking,
+        lastActive: Date.now()
+      });
+    }, 250);
 
     listenToPlayers();
   } catch (err) {
@@ -61,33 +66,35 @@ async function initVoice() {
   }
 }
 
-// 🟢 Live updates of players
+// 🟢 Listen to everyone in same server
 function listenToPlayers() {
   const ref = db.ref(path("playerInfo", myServer));
 
   ref.on("value", snap => {
     const data = snap.val() || {};
+    const ids = new Set(Object.keys(data));
 
-    // Remove missing players
-    const currentIds = new Set(Object.keys(data));
+    // Remove bubbles for players who left
     document.querySelectorAll(".bubble").forEach(b => {
       const id = b.id.replace("bubble_", "");
-      if (!currentIds.has(id)) b.remove();
+      if (!ids.has(id)) {
+        b.classList.add("fade-out");
+        setTimeout(() => b.remove(), 300);
+      }
     });
 
-    // Create / update each player bubble
+    // Update / create bubbles
     Object.keys(data).forEach(pid => {
       const p = data[pid];
-      if (p && typeof p === "object") {
-        const el = createBubble(pid, p.name || pid, p.avatar || "", pid === myId);
-        if (p.speaking) el.classList.add("speaking");
-        else el.classList.remove("speaking");
-      }
+      if (!p) return;
+      const el = createBubble(pid, p.name || pid, p.avatar || "", pid === myId);
+      if (p.speaking) el.classList.add("speaking");
+      else el.classList.remove("speaking");
     });
   });
 }
 
-// 🫧 Create bubble
+// 🫧 Create player bubbles
 function createBubble(id, name, avatar, isMe) {
   let existing = document.getElementById("bubble_" + id);
   if (existing) return existing;
