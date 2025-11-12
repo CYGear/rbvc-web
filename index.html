@@ -3,23 +3,25 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>RBVC</title>
+  <title>RBVC — Web Voice</title>
   <link rel="stylesheet" href="style.css"/>
+
+  <!-- Firebase v8 (works on static hosting like GitHub Pages) -->
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
 </head>
 <body>
   <div id="joinCard" class="card">
     <h1>🎧 RBVC Voice</h1>
-    <input id="server" placeholder="Server Code (4 digits)" maxlength="4"/>
-    <input id="pid" placeholder="Your UserId (from Roblox)"/>
+    <input id="server" placeholder="Server Code (4 digits)" maxlength="4" autocomplete="off"/>
+    <input id="pid" placeholder="Your UserId (from Roblox)" autocomplete="off"/>
     <button id="connectBtn">Connect</button>
     <p id="status">Waiting…</p>
   </div>
 
   <div id="bubbles"></div>
 
-  <!-- Load after DOM -->
+  <!-- Load after DOM so inputs are interactive -->
   <script src="script.js" defer></script>
 </body>
 </html>
