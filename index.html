@@ -1,26 +1,22 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>RBVC — Web Voice</title>
-  <link rel="stylesheet" href="style.css"/>
-  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>RBVC</title>
+<link rel="stylesheet" href="style.css"/>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
 </head>
 <body>
-  <div id="joinCard" class="card">
-    <h1>🎧 RBVC</h1>
-    <input id="server" placeholder="4-digit Server Code (e.g. 1234)" maxlength="4"/>
-    <input id="pid" placeholder="Your ID (any string)"/>
-    <input id="displayName" placeholder="Display name (optional)"/>
-    <input id="avatarUrl" placeholder="Avatar URL (optional)"/>
-    <button id="connectBtn">Connect</button>
-    <p id="status">⏳ Waiting…</p>
-  </div>
-
-  <div id="bubbles"></div>
-
-  <script src="script.js"></script>
+<div id="joinCard" class="card">
+  <h1>🎧 RBVC Voice</h1>
+  <input id="server" placeholder="Server Code (4 digits)" maxlength="4"/>
+  <input id="pid" placeholder="Your UserId (from Roblox)"/>
+  <button id="connectBtn">Connect</button>
+  <p id="status">Waiting…</p>
+</div>
+<div id="bubbles"></div>
+<script src="script.js"></script>
 </body>
 </html>
