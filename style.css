@@ -83,3 +83,17 @@ button:hover { filter:brightness(1.06); }
   box-shadow:0 0 35px rgba(0,255,153,.8), 0 0 70px rgba(0,255,153,.4);
 }
 .bubble.fade-out { opacity:0; transform:scale(.75); }
+
+/* Debug */
+#debug {
+  position: fixed;
+  right: 10px; bottom: 10px;
+  width: 340px; height: 220px;
+  display:flex; flex-direction:column;
+  background: rgba(0,0,0,.55);
+  border:1px solid #0a0a0a; border-radius:12px;
+  box-shadow:0 0 16px rgba(0,0,0,.5);
+  backdrop-filter: blur(2px);
+}
+#debug .hdr { padding:.4rem .75rem; font-weight:700; color:#9affd1; }
+#log { margin:0; padding:.5rem .75rem; color:#b7ffe7; overflow:auto; white-space:pre-wrap; }
