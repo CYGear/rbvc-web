@@ -2,26 +2,22 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>RBVC</title>
-  <link rel="stylesheet" href="style.css"/>
-  <!-- Firebase (compat builds for simplicity) -->
-  <script src="https://www.gstatic.com/firebasejs/10.12.3/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.3/firebase-database-compat.js"></script>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
 </head>
 <body>
-  <div id="micStatus">🎤 Mic: Disconnected</div>
-  <div id="bubbleArea"></div>
-
-  <!-- Join overlay -->
-  <div id="overlay">
-    <div id="joinBox">
+  <div id="container">
+    <div class="card">
       <h1>🎧 RBVC</h1>
-      <input id="serverId" placeholder="Server ID (4 digits)" maxlength="4"/>
-      <input id="playerId" placeholder="Your Player ID (6 digits)" maxlength="6"/>
+      <input id="server" placeholder="Server ID" />
+      <input id="pid" placeholder="Player ID" />
       <button id="connectBtn">Connect</button>
-      <div class="hint">Use the same Server/Player IDs shown in Roblox.</div>
+      <p id="status"></p>
     </div>
+    <div id="bubbles"></div>
   </div>
 
   <script src="script.js"></script>
